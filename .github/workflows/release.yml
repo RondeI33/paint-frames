@@ -1,0 +1,61 @@
+name: Release existing Windows executable
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and release Windows binary
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the tagged release
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify and package the existing executable
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          ./scripts/Package-Release.ps1 -Version $env:RELEASE_VERSION -OutputDirectory (Join-Path $env:RUNNER_TEMP 'paint-frames-release')
+
+      - name: Publish the Windows release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_VERSION
+          if ($version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid release version.' }
+          $releaseJson = gh release view $version --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (-not ($releaseJson | ConvertFrom-Json).isDraft) {
+              throw 'This release is already published. Published assets are not overwritten.'
+            }
+          } else {
+            gh release create $version --verify-tag --draft --title "Paint Frames $version" --notes-file RELEASE-NOTES.md
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create draft release.' }
+          }
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP 'paint-frames-release'
+          $assets = @(
+            (Join-Path $artifactDirectory 'PaintFrames.exe'),
+            (Join-Path $artifactDirectory "PaintFrames-$version-windows.zip"),
+            (Join-Path $artifactDirectory 'SHA256SUMS.txt')
+          )
+          gh release upload $version @assets --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Could not upload release assets.' }
+          gh release edit $version --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish release.' }

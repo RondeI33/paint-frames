@@ -1,0 +1,5 @@
+/PaintFrames.exe
+/artifacts/
+*.pdb
+.vs/
+*.user

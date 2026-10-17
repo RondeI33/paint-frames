@@ -1,0 +1,50 @@
+PAINT FRAMES - Microsoft Paint on Windows 11
+
+1. Open your drawing in Paint and open the Layers panel.
+2. Double-click PaintFrames.exe. No installation or AutoHotkey required.
+3. In the helper, UNCHECK any layers you do not want to animate.
+   Checked layers become frames. Unchecked layers keep their original
+   visibility: visible ones stay visible, hidden ones stay hidden.
+   For a permanent background, show that layer in Paint before starting
+   the preview, then uncheck it in the helper.
+4. Click Paint, then use:
+
+   F7  Next frame (first press starts at the TOP checked layer)
+   F6  Previous frame
+   F8  Play / pause
+   F9  Stop and restore the original layer visibility
+
+Each checked paint layer is one complete frame. Only one checked layer is
+shown at a time, together with any visible excluded layers. The last frame
+loops back to the first. The separate background swatch is left as it was.
+The shown frame is also selected for drawing. The checklist follows the
+top-to-bottom order in Paint, even if Paint's layer names count backwards.
+
+Changing a checkbox pauses playback and restores the original visibility;
+press F7 to start with the new selection. To change whether an excluded
+layer stays visible, press F9, set its eye button in Paint, then start again.
+Exclusions last while the helper is open. They are not saved into the image.
+
+The small helper window has the same controls, a First frame button,
+and a playback speed control. Playback pauses when you switch to another
+app. Its speed depends on how quickly Paint updates its layers.
+
+The shortcuts are intercepted only while Microsoft Paint is active.
+On some laptops you may need Fn+F6 / Fn+F7 / Fn+F8 / Fn+F9.
+
+Keep the Layers panel open. After adding, deleting, or reordering layers,
+click Re-scan. It preserves exclusions for layers it still recognizes.
+Restore before changing the layer structure if you want to preserve the
+previous visibility state. The next preview records the current visibility
+as its restoration point.
+
+Closing the helper restores the visibility and selection saved at the
+start of the preview when the same layers are still available. It does not
+save, export, delete, merge, or modify the pixels of your artwork. Any
+drawing you do while using it stays in the selected frame. This is a live
+preview helper; it does not export GIFs or videos.
+
+SOURCE
+PaintFrames.cs is the complete editable source. Build.cmd rebuilds the
+executable using the .NET Framework compiler included with Windows.
+No administrator privileges, downloads, or security-setting changes needed.
