@@ -20,7 +20,7 @@ sealed class TrackEditor : UserControl
     public TrackEditor()
     {
         Dock = DockStyle.Fill;
-        var hint = new Label { Dock = DockStyle.Top, Height = 53, Padding = new Padding(8), Text = "Layers: 1-6 = six frames; 1+7,2+8 = two frames with two layers each.\nStart after: blank = play together; a track name = wait for that track. Cycles: 0 = forever." };
+        var hint = new Label { Dock = DockStyle.Top, Height = 53, Padding = new Padding(8), Text = "Layers: 1-6 = six frames; 1+7,2+8 = layered frames. FPS: 1-12 per track; 0 = Default FPS.\nStart after: blank = together; a track name = wait for its cycles to finish. Cycles: 0 = forever." };
         var split = new SplitContainer { Dock = DockStyle.Fill, FixedPanel = FixedPanel.Panel2, Size = new Size(930, 280), Panel2MinSize = 180, SplitterDistance = 700 };
         grid.Dock = DockStyle.Fill; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false;
         grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.RowHeadersVisible = false;
@@ -29,6 +29,7 @@ sealed class TrackEditor : UserControl
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Track", HeaderText = "Track name", FillWeight = 110 });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Layers", HeaderText = "Layers / frames", FillWeight = 150 });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Cycles", HeaderText = "Cycles", FillWeight = 60 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Fps", HeaderText = "FPS", FillWeight = 50 });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "After", HeaderText = "Start after", FillWeight = 110 });
         var ending = new DataGridViewComboBoxColumn { Name = "End", HeaderText = "When done", FillWeight = 95 };
         ending.Items.AddRange("Hide", "Hold last"); grid.Columns.Add(ending);
@@ -41,7 +42,7 @@ sealed class TrackEditor : UserControl
         split.Panel2.Controls.Add(layerList);
         split.Panel2.Controls.Add(new Label { Text = "Paint layer numbers", Dock = DockStyle.Top, Height = 24 });
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 76, Padding = new Padding(4) };
-        AddButton(bottom, "Add track", delegate { grid.Rows.Add(true, "Track " + (grid.Rows.Count + 1), "1", "1", "", "Hide"); Changed(); });
+        AddButton(bottom, "Add track", delegate { grid.Rows.Add(true, "Track " + (grid.Rows.Count + 1), "1", "1", "0", "", "Hide"); Changed(); });
         AddButton(bottom, "Remove", delegate { if (grid.CurrentRow != null) { grid.Rows.Remove(grid.CurrentRow); Changed(); } });
         AddButton(bottom, "Your example", LoadExample);
         AddButton(bottom, "Save setup", SaveSetup);
@@ -71,7 +72,7 @@ sealed class TrackEditor : UserControl
         layerList.Items.Clear(); if (names != null) layerList.Items.AddRange(names);
         if (grid.Rows.Count == 0 && names != null && names.Length > 0)
         {
-            grid.Rows.Add(true, "Track 1", "1-" + names.Length, "0", "", "Hide"); Changed();
+            grid.Rows.Add(true, "Track 1", "1-" + names.Length, "0", "0", "", "Hide"); Changed();
         }
     }
 
@@ -82,11 +83,14 @@ sealed class TrackEditor : UserControl
         foreach (DataGridViewRow row in grid.Rows)
         {
             int cycles;
-            if (!Int32.TryParse(Convert.ToString(row.Cells[3].Value), out cycles)) throw new InvalidOperationException("Cycles must be a whole number; use 0 to loop forever.");
+            int rate;
+            if (!Int32.TryParse(Convert.ToString(row.Cells["Cycles"].Value), out cycles)) throw new InvalidOperationException("Cycles must be a whole number; use 0 to loop forever.");
+            if (!Int32.TryParse(Convert.ToString(row.Cells["Fps"].Value), out rate) || rate < 0 || rate > 12)
+                throw new InvalidOperationException("Track FPS must be a whole number from 1 to 12, or 0 to use Default FPS.");
             result.Tracks.Add(new AnimationTrack {
-                Enabled = Convert.ToBoolean(row.Cells[0].Value), Name = Convert.ToString(row.Cells[1].Value),
-                Layers = Convert.ToString(row.Cells[2].Value), Cycles = cycles,
-                StartAfter = Convert.ToString(row.Cells[4].Value), HoldLast = Convert.ToString(row.Cells[5].Value) == "Hold last"
+                Enabled = Convert.ToBoolean(row.Cells["Enabled"].Value), Name = Convert.ToString(row.Cells["Track"].Value),
+                Layers = Convert.ToString(row.Cells["Layers"].Value), Cycles = cycles, FramesPerSecond = rate,
+                StartAfter = Convert.ToString(row.Cells["After"].Value), HoldLast = Convert.ToString(row.Cells["End"].Value) == "Hold last"
             });
         }
         return result;
@@ -98,7 +102,7 @@ sealed class TrackEditor : UserControl
         try
         {
             grid.Rows.Clear(); repeat.Checked = definition.RepeatSequence;
-            foreach (var track in definition.Tracks) grid.Rows.Add(track.Enabled, track.Name, track.Layers, track.Cycles.ToString(), track.StartAfter, track.HoldLast ? "Hold last" : "Hide");
+            foreach (var track in definition.Tracks) grid.Rows.Add(track.Enabled, track.Name, track.Layers, track.Cycles.ToString(), track.FramesPerSecond.ToString(), track.StartAfter, track.HoldLast ? "Hold last" : "Hide");
             if (SpeedLoaded != null) SpeedLoaded(Math.Max(1, Math.Min(12, definition.FramesPerSecond)));
         }
         finally { updating = false; }

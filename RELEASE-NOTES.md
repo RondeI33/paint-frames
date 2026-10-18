@@ -1,20 +1,19 @@
-## Layered animation
+## Different FPS for each animation track
 
-Animate several Paint layer tracks together, or switch between them after a chosen number of complete loops.
+Animate slow and fast Paint layers together. Each track now has its own **FPS** column.
 
-- New **Layered animation** tab with named tracks, layer/frame ranges, cycle counts, and **Start after** links.
-- **Your example** preset: layers **1-6 three times**, then **1-3 once**, then **4-8 forever**. Requires eight Paint layers.
-- Tracks can run together. Their visible layers are combined, including shared layers.
-- **Hide** a completed track or **Hold last** to keep its last frame on screen.
-- Compose a frame from several layers with `1+7,2+8,3+9`.
-- Repeat the whole finite sequence, or stop when it ends. **0 cycles** loops a track forever.
-- Save/load animation setups and playback speed as XML.
-- Existing single-loop mode and exclusions remain available.
+- Set each track to **1-12 FPS**, or **0** to follow **Default FPS**.
+- Run a slow track at **2 FPS** alongside another at **8 FPS**.
+- Loop counts and **Start after** handoffs respect each track's speed.
+- Elapsed-time scheduling keeps independent tracks in sync. Paint may skip intermediate frames when it cannot keep up.
+- **F6/F7** step between scheduled frame changes across the tracks.
+- Save/load preserves per-track FPS. Existing v0.2 setup files inherit their saved default speed automatically.
+- Single-loop mode, multi-layer frames, exclusions, and Hide/Hold last remain available.
 
-**Use it:** keep Paint's Layers panel open, open **Layered animation**, click **Your example**, adjust the layer numbers, then press **F8**. Layer numbers follow the top-to-bottom Paint list. **F6/F7** step backward/forward; **F9** restores original visibility.
+**Use it:** open **Layered animation**, edit the **FPS** column for each track, and press **F8**. Leave **Start after** blank for tracks that should play together. Keep Paint's Layers panel open; **F9** restores original visibility.
 
 Download **PaintFrames.exe** directly, or the Windows ZIP with instructions. Close the previous helper before starting the new version.
 
-Validation: application compilation plus a focused scheduler/editor check covering exact repeat counts and handoffs, concurrent/composite frames, hold/hide behavior, backgrounds, wrapping/stopping, circular dependency rejection, and setup round-trip. A broad live Paint test was not performed.
+Validation: application compilation and focused scheduler/editor checks, including 2/8 FPS concurrency, elapsed-time deadlines, speed-aware handoffs, manual stepping, saved FPS values, and v0.2 setup compatibility. A full live Paint playback test was not performed.
 
-Windows 11 with Paint Layers is required. ARM64 remains untested. The executable is unsigned. GitHub Actions packages the locally built v0.2 executable and verifies its checksum; it does not rebuild it. This is a preview helper, with no GIF/video export.
+Windows 11 with Paint Layers is required. ARM64 remains untested. The executable is unsigned. GitHub Actions packages the locally built v0.3 executable and verifies its checksum; it does not rebuild it. This is a preview helper, with no GIF/video export.

@@ -9,6 +9,7 @@ public sealed class AnimationTrack
     public string Name = "Track 1";
     public string Layers = "1";
     public int Cycles = 1; // Zero means forever.
+    public int FramesPerSecond; // Zero inherits the setup default, including v0.2 XML files.
     public string StartAfter = "";
     public bool HoldLast;
 }
@@ -22,12 +23,16 @@ public sealed class AnimationDefinition
 
 sealed class CompiledTimeline
 {
+    // LCM(1..12): each supported FPS has an exact integral frame duration.
+    public const long TimeUnitsPerSecond = 27720;
     sealed class Track
     {
         public AnimationTrack Settings;
         public int[][] Frames;
         public long Start;
         public long Duration;
+        public long FrameDuration;
+        public int FramesPerSecond;
         public int Visit;
     }
     readonly List<Track> tracks;
@@ -39,6 +44,8 @@ sealed class CompiledTimeline
     {
         if (definition == null || definition.Tracks == null || definition.Tracks.Count > 128)
             throw new InvalidOperationException("Use an animation setup with at most 128 tracks.");
+        if (definition.FramesPerSecond < 1 || definition.FramesPerSecond > 12)
+            throw new InvalidOperationException("Default FPS must be between 1 and 12.");
         tracks = new List<Track>();
         var byName = new Dictionary<string, Track>(StringComparer.OrdinalIgnoreCase);
         ControlledLayers = new bool[layerCount];
@@ -52,7 +59,11 @@ sealed class CompiledTimeline
             if (item.Cycles < 0 || item.Cycles > 1000000)
                 throw new InvalidOperationException(name + ": cycles must be 0 (forever) or 1-1000000.");
             var track = new Track { Settings = item, Frames = ParseFrames(item.Layers, layerCount) };
-            track.Duration = item.Cycles == 0 ? -1 : checked((long)track.Frames.Length * item.Cycles);
+            track.FramesPerSecond = item.FramesPerSecond == 0 ? definition.FramesPerSecond : item.FramesPerSecond;
+            if (track.FramesPerSecond < 1 || track.FramesPerSecond > 12)
+                throw new InvalidOperationException(name + ": FPS must be 1-12, or 0 to use Default FPS.");
+            track.FrameDuration = TimeUnitsPerSecond / track.FramesPerSecond;
+            track.Duration = item.Cycles == 0 ? -1 : checked((long)track.Frames.Length * item.Cycles * track.FrameDuration);
             byName.Add(name, track); tracks.Add(track);
             foreach (var frame in track.Frames) foreach (int layer in frame) ControlledLayers[layer] = true;
         }
@@ -120,10 +131,48 @@ sealed class CompiledTimeline
 
     public long Move(long current, int direction)
     {
-        if (current < 0) return direction < 0 && repeat ? Duration - 1 : 0;
-        long next = Math.Max(0, current + direction);
-        if (repeat) return current == 0 && direction < 0 ? Duration - 1 : next % Duration;
-        return Duration < 0 ? next : Math.Min(next, Duration);
+        if (current < 0) return direction < 0 && repeat ? BoundaryAtOrBefore(Duration - 1) : 0;
+        if (direction >= 0) return NormalizeTime(BoundaryAfter(current));
+        long displayedFrame = BoundaryAtOrBefore(current);
+        if (displayedFrame == 0) return repeat ? BoundaryAtOrBefore(Duration - 1) : 0;
+        return BoundaryAtOrBefore(displayedFrame - 1);
+    }
+
+    long BoundaryAfter(long current)
+    {
+        long next = Int64.MaxValue;
+        foreach (var track in tracks)
+        {
+            if (current < track.Start) { next = Math.Min(next, track.Start); continue; }
+            if (track.Duration >= 0 && current >= track.Start + track.Duration) continue;
+            long frame = (current - track.Start) / track.FrameDuration + 1;
+            next = Math.Min(next, checked(track.Start + frame * track.FrameDuration));
+        }
+        return next == Int64.MaxValue ? current : next;
+    }
+
+    long BoundaryAtOrBefore(long current)
+    {
+        long previous = 0;
+        foreach (var track in tracks)
+        {
+            if (current < track.Start) continue;
+            long local = current - track.Start;
+            if (track.Duration >= 0) local = Math.Min(local, track.Duration);
+            previous = Math.Max(previous, track.Start + local / track.FrameDuration * track.FrameDuration);
+        }
+        return previous;
+    }
+
+    public long NormalizeTime(long time)
+    {
+        time = Math.Max(0, time);
+        return repeat ? time % Duration : Duration < 0 ? time : Math.Min(time, Duration);
+    }
+
+    public double NextChangeMilliseconds(long current)
+    {
+        return Finished(current) ? Double.PositiveInfinity : (BoundaryAfter(current) - current) * 1000.0 / TimeUnitsPerSecond;
     }
 
     public bool Finished(long tick) { return !repeat && Duration >= 0 && tick >= Duration; }
@@ -140,9 +189,10 @@ sealed class CompiledTimeline
             if (local < 0) continue;
             bool ended = track.Duration >= 0 && local >= track.Duration;
             if (ended && !track.Settings.HoldLast) continue;
-            int frame = ended ? track.Frames.Length - 1 : (int)(local % track.Frames.Length);
+            long elapsedFrames = local / track.FrameDuration;
+            int frame = ended ? track.Frames.Length - 1 : (int)(elapsedFrames % track.Frames.Length);
             foreach (int layer in track.Frames[frame]) visible[layer] = true;
-            labels.Add(track.Settings.Name + (ended ? " (held)" : " " + (frame + 1) + "/" + track.Frames.Length + " cycle " + (local / track.Frames.Length + 1) + "/" + (track.Duration < 0 ? "forever" : track.Settings.Cycles.ToString())));
+            labels.Add(track.Settings.Name + (ended ? " (held)" : " " + (frame + 1) + "/" + track.Frames.Length + " @" + track.FramesPerSecond + "fps cycle " + (elapsedFrames / track.Frames.Length + 1) + "/" + (track.Duration < 0 ? "forever" : track.Settings.Cycles.ToString())));
         }
         description = Finished(tick) ? "Sequence finished" : String.Join(" | ", labels);
         return visible;

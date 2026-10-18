@@ -1,6 +1,20 @@
 PAINT FRAMES - Microsoft Paint on Windows 11
 
-NEW IN v0.2: LAYERED ANIMATION
+NEW IN v0.3: DIFFERENT FPS FOR EACH TRACK
+The Layered animation tab has an FPS column. Set each track to 1-12 FPS.
+For example, 2 FPS holds each frame for half a second; 8 FPS advances
+eight times per second. Set FPS to 0 to use Default FPS below the editor.
+The Default FPS control also sets the speed for Single loop mode.
+
+Tracks run on the same elapsed-time clock at independent speeds. Start
+after waits for the parent's cycles at its own FPS: three frames repeated
+three times at 2 FPS finish after 4.5 seconds. F6/F7 step between scheduled
+changes. Paint may skip intermediate frames if it cannot keep up.
+
+Track FPS values are saved in setup XML files. Older v0.2 setups still
+load and use their saved default speed for tracks without an FPS field.
+
+LAYERED ANIMATION
 Open the Layered animation tab to animate several tracks together or
 chain one loop after another. Click "Your example" for this setup:
 
@@ -18,10 +32,10 @@ Leave Start after blank on multiple tracks to animate them together.
 Use Hold last to keep a finished track's last frame visible.
 Use 1+7,2+8,3+9 to make frames containing several layers at once.
 Layers not used by enabled tracks keep their original visibility.
-All tracks share the playback speed. Paint's layer order controls stacking.
+Each track can have its own FPS. Paint's layer order controls stacking.
 
 Repeat whole sequence restarts all finite tracks; uncheck it to stop at
-the end. Save setup / Load setup stores tracks and playback speed in an
+the end. Save setup / Load setup stores tracks and their FPS values in an
 XML file, not the artwork. Keep the same Paint layer order when loading.
 Editing a track pauses playback; the next step restarts the preview.
 The Single loop checklist only controls the Single loop tab.

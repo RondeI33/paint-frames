@@ -1,1 +1,1 @@
-5dd705265c12ecd2c4a043fb82e00c7a3a3fba5d02840e6beab3eb6e40c8e9d4  PaintFrames.exe
+2574f52ac74ccf024c21a51e8be65c290d0ef51deeef2aa3a1b00375148c6dd3  PaintFrames.exe

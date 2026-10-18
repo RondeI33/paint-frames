@@ -11,8 +11,8 @@ using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("0.2.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.2.0.0")]
+[assembly: System.Reflection.AssemblyVersion("0.3.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.3.0.0")]
 
 static class Native
 {
@@ -65,6 +65,8 @@ sealed class FrameEngine
     public bool HasSession { get { return original != null; } }
     public bool HasFrame { get { return current >= 0 || timelineTick >= 0; } }
     public bool Completed { get { return timeline != null && timeline.Finished(timelineTick); } }
+    public long PlaybackPosition { get { return Math.Max(0, timelineTick); } }
+    public double NextChangeMilliseconds { get { return timeline == null ? 0 : timeline.NextChangeMilliseconds(timelineTick); } }
     public string[] FrameIds { get; private set; }
     public string[] FrameNames { get; private set; }
 
@@ -116,7 +118,7 @@ sealed class FrameEngine
         FrameNames = layers.Select((x, i) => (i + 1) + ". " + x.Element.Current.Name + (i == 0 ? "  (top)" : i == layers.Count - 1 ? "  (bottom)" : "")).ToArray();
     }
 
-    public string Execute(IntPtr hwnd, string action, HashSet<string> excluded, AnimationDefinition definition)
+    public string Execute(IntPtr hwnd, string action, HashSet<string> excluded, AnimationDefinition definition, long playbackTime = 0)
     {
         if (action == "restore") return Restore();
         var layers = Read(hwnd);
@@ -134,7 +136,7 @@ sealed class FrameEngine
         if (definition != null)
         {
             if (timeline == null) timeline = new CompiledTimeline(definition, layers.Count);
-            long nextTick = action == "first" ? 0 : timeline.Move(timelineTick, action == "previous" ? -1 : 1);
+            long nextTick = action == "first" ? 0 : action == "playback" ? timeline.NormalizeTime(playbackTime) : timeline.Move(timelineTick, action == "previous" ? -1 : 1);
             string description;
             bool[] visible = timeline.Visibility(nextTick, original, out description);
             // Visibility is a union: one track never hides another track's current frame.
@@ -144,7 +146,7 @@ sealed class FrameEngine
             for (int i = 0; i < layers.Count; i++) if (visible[i] && timeline.ControlledLayers[i]) { selected = i; break; }
             if (selected >= 0) Select(layers[selected]);
             timelineTick = nextTick;
-            return "Step " + (timelineTick + 1) + ": " + description;
+            return (timelineTick / (double)CompiledTimeline.TimeUnitsPerSecond).ToString("0.000") + "s: " + description;
         }
         var frames = Enumerable.Range(0, layers.Count).Where(i => !excluded.Contains(layers[i].Id)).ToList();
         if (frames.Count == 0) throw new InvalidOperationException("Check at least one layer to use as an animation frame.");
@@ -183,14 +185,17 @@ sealed class FrameWindow : Form
     readonly TrackEditor trackEditor = new TrackEditor();
     readonly System.Windows.Forms.Timer clock = new System.Windows.Forms.Timer();
     readonly HashSet<int> held = new HashSet<int>();
+    readonly Stopwatch playbackClock = new Stopwatch();
     readonly Native.HookProc callback;
     IntPtr hook, paint;
     bool busy, playing, closeAllowed, syncingChoices, configurationDirty;
     DateTime lastFrame = DateTime.MinValue;
+    long playbackOrigin;
+    double nextPlaybackChange;
 
     public FrameWindow()
     {
-        Text = "Paint Frames 0.2 - Layered animation"; ClientSize = new Size(960, 690);
+        Text = "Paint Frames 0.3 - Per-track FPS"; ClientSize = new Size(960, 690);
         Font = new Font("Segoe UI", 10); FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(246, 247, 250);
@@ -224,14 +229,15 @@ sealed class FrameWindow : Form
         AddButton("First frame", 20, 543, 145, "first");
         AddButton("Restore  F9", 186, 543, 145, "restore");
         AddButton("Re-scan", 352, 543, 145, "scan");
-        Controls.Add(new Label { Text = "Playback speed", Location = new Point(20, 597), Size = new Size(120, 25) });
+        Controls.Add(new Label { Text = "Default FPS", Location = new Point(20, 597), Size = new Size(120, 25) });
         fps.SetBounds(145, 594, 55, 28); fps.Minimum = 1; fps.Maximum = 12; fps.Value = 4; Controls.Add(fps);
-        Controls.Add(new Label { Text = "frames/sec (Paint may be slower)", Location = new Point(210, 597), Size = new Size(330, 25) });
+        fps.ValueChanged += delegate { if (modes.SelectedIndex == 1) SettingsChanged(); };
+        Controls.Add(new Label { Text = "Single loop / tracks with FPS = 0. Paint may be slower.", Location = new Point(210, 597), Size = new Size(700, 25) });
         status.SetBounds(20, 634, 920, 50); status.Text = "Click Paint, then press F7 to begin."; Controls.Add(status);
         callback = Keyboard;
         hook = Native.SetWindowsHookEx(13, callback, Native.GetModuleHandle(null), 0);
         if (hook == IntPtr.Zero) status.Text = "Keyboard shortcuts unavailable. Use the buttons instead.";
-        clock.Interval = 50;
+        clock.Interval = 15;
         clock.Tick += async delegate
         {
             IntPtr front = Native.GetForegroundWindow();
@@ -240,6 +246,16 @@ sealed class FrameWindow : Form
             {
                 // Pause when the user switches away from the preview's Paint window.
                 if (front != paint && front != Handle) { Pause(); status.Text += " - paused"; }
+                else if (!busy && modes.SelectedIndex == 1)
+                {
+                    double elapsed = playbackClock.Elapsed.TotalMilliseconds;
+                    if (elapsed >= nextPlaybackChange)
+                    {
+                        long time = playbackOrigin + (long)(elapsed * CompiledTimeline.TimeUnitsPerSecond / 1000.0);
+                        await Run("playback", time);
+                        nextPlaybackChange = elapsed + engine.NextChangeMilliseconds;
+                    }
+                }
                 else if (!busy && (DateTime.UtcNow - lastFrame).TotalMilliseconds >= 1000.0 / (double)fps.Value) await Run("next");
             }
         };
@@ -289,7 +305,7 @@ sealed class FrameWindow : Form
         }
         return Native.CallNextHookEx(hook, code, message, data);
     }
-    void Pause() { playing = false; play.Text = "Play  F8"; }
+    void Pause() { playing = false; playbackClock.Stop(); play.Text = "Play  F8"; }
     void SettingsChanged()
     {
         Pause(); configurationDirty = true;
@@ -300,15 +316,18 @@ sealed class FrameWindow : Form
         if (playing) { Pause(); return; }
         if (busy) return;
         if ((!engine.HasFrame || engine.Completed || configurationDirty) && !await Run("first")) return;
+        playbackOrigin = engine.PlaybackPosition;
+        nextPlaybackChange = engine.NextChangeMilliseconds;
+        playbackClock.Restart();
         playing = true; lastFrame = DateTime.UtcNow; play.Text = "Pause  F8";
     }
-    async Task<bool> Run(string action)
+    async Task<bool> Run(string action, long playbackTime = 0)
     {
         if (busy) return false;
         busy = true; modes.Enabled = false;
         try
         {
-            bool frameAction = action == "next" || action == "previous" || action == "first";
+            bool frameAction = action == "next" || action == "previous" || action == "first" || action == "playback";
             AnimationDefinition definition = frameAction && modes.SelectedIndex == 1 ? trackEditor.ReadDefinition() : null;
             IntPtr target = action == "restore" ? IntPtr.Zero : FindPaint();
             var excluded = new HashSet<string>();
@@ -318,7 +337,7 @@ sealed class FrameWindow : Form
                 if (engine.HasSession) await Task.Run(() => engine.Restore());
                 configurationDirty = false;
             }
-            status.Text = await Task.Run(() => engine.Execute(target, action, excluded, definition));
+            status.Text = await Task.Run(() => engine.Execute(target, action, excluded, definition, playbackTime));
             RefreshChoices();
             lastFrame = DateTime.UtcNow;
             if (engine.Completed) Pause();

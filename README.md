@@ -2,7 +2,7 @@
 
 **Use Microsoft Paint layers as animation frames on Windows 11.**
 
-Step through your drawing, combine independent animation tracks, and chain loops together for layered cartoon animation. Keep backgrounds and reference layers visible while the animated layers change.
+Step through your drawing, combine animation tracks with different FPS, and chain loops together for layered cartoon animation. Keep backgrounds and reference layers visible while the animated layers change.
 
 [Download PaintFrames.exe](https://github.com/RondeI33/paint-frames/releases/latest/download/PaintFrames.exe) · [Releases](https://github.com/RondeI33/paint-frames/releases) · [Report an issue](https://github.com/RondeI33/paint-frames/issues)
 
@@ -33,22 +33,23 @@ Changing a checkbox pauses playback and restores the previous visibility. Press 
 
 Exclusions last for the current helper session and are not saved into the image. After adding, deleting, or reordering layers, use **Re-scan**. Restore first if you want to preserve the original visibility arrangement. Paint's separate background swatch is left unchanged.
 
-## Layered animation (new in v0.2)
+## Layered animation and per-track FPS
 
 Open the **Layered animation** tab. Each row describes a track. Paint layer numbers are shown on the right: **1 is the top Paint layer**, regardless of its name.
 
 Click **Your example** to fill in this sequence (requires at least eight Paint layers):
 
-| Track name | Layers / frames | Cycles | Start after | When done |
-| --- | --- | --- | --- | --- |
-| Loop 1 | `1-6` | `3` | *(blank)* | Hide |
-| Loop 2 | `1-3` | `1` | Loop 1 | Hide |
-| Loop 3 | `4-8` | `0` | Loop 2 | Hide |
+| Track name | Layers / frames | Cycles | FPS | Start after | When done |
+| --- | --- | --- | --- | --- | --- |
+| Loop 1 | `1-6` | `3` | `0` | *(blank)* | Hide |
+| Loop 2 | `1-3` | `1` | `0` | Loop 1 | Hide |
+| Loop 3 | `4-8` | `0` | `0` | Loop 2 | Hide |
 
 This shows layers 1-6 three complete times, switches to 1-3 once, then plays 4-8 forever. An outgoing track set to **Hide** disappears when the next starts. Press **F8** to play, or **F7/F6** to inspect the sequence step by step.
 
-- **Play together:** leave **Start after** blank for multiple tracks. Each cycles independently at the shared playback speed; their visible layers are combined.
-- **Chain tracks:** enter another enabled track's name in **Start after**. The new track begins after that track completes all its cycles. Multiple tracks may start after the same track.
+- **Per-track FPS:** enter **1-12** in a track's **FPS** column. For example, a track at **2 FPS** holds each frame for half a second while a simultaneous track at **8 FPS** changes every eighth of a second. **0** uses the **Default FPS** control below the editor. Default FPS also controls Single loop mode.
+- **Play together:** leave **Start after** blank for multiple tracks. Each cycles at its own FPS; their visible layers are combined.
+- **Chain tracks:** enter another enabled track's name in **Start after**. The new track begins after that track completes all its cycles at its own FPS. For example, three frames repeated three times at 2 FPS take **4.5 seconds**. Multiple tracks may start after the same track.
 - **Cycles:** a positive number repeats that track that many times; **0** loops forever. A track cannot start after one that never finishes.
 - **When done:** **Hide** clears the finished track; **Hold last** keeps its last frame visible alongside later tracks.
 - **Multiple layers per frame:** `1+7,2+8,3+9` makes three frames, each showing two layers together. `1-6` is a sequential range; `6-1` plays backwards. Commas separate frames or ranges.
@@ -56,7 +57,9 @@ This shows layers 1-6 three complete times, switches to 1-3 once, then plays 4-8
 - **Backgrounds/exclusions:** layers not used by any enabled track keep their original visibility. The Single loop checklist applies only to Single loop mode.
 - **Shared layers:** if two active tracks use the same Paint layer, it stays visible while either needs it. Paint's stacking order determines compositing.
 
-**Save setup / Load setup** stores the tracks, their timing, whole-sequence repeat setting, and playback speed in a `.paintframes.xml` file. It stores layer positions, not artwork. Use the same layer order when loading it again. Editing a track pauses playback; the next step restores the old preview and starts the new settings from the beginning. Keep your Paint document open when restoring.
+**Save setup / Load setup** stores the tracks, each track's FPS, whole-sequence repeat setting, and default FPS in a `.paintframes.xml` file. Existing v0.2 setups still load: tracks without an FPS field inherit their saved default. It stores layer positions, not artwork. Use the same layer order when loading it again. Editing a track pauses playback; the next step restores the old preview and starts the new settings from the beginning. Keep your Paint document open when restoring.
+
+Layered playback follows elapsed time so track speeds remain independent. **F7/F6** step to the next/previous scheduled frame change across all tracks. Actual display speed depends on Paint: when it cannot keep up, playback may skip intermediate frames to maintain timing.
 
 ## Compatibility and limits
 
@@ -64,7 +67,7 @@ This shows layers 1-6 three complete times, switches to 1-3 once, then plays 4-8
 - Requires **Windows 11** and **Microsoft Paint with Layers**. Keep the Layers panel open.
 - Uses Windows Forms, Windows UI Automation, and .NET Framework 4.x. [Windows 11 includes .NET Framework 4.8 or 4.8.1](https://learn.microsoft.com/en-us/dotnet/framework/install/).
 - The supplied executable is a managed **AnyCPU** application. It is portable, but universal compatibility with every Windows 11 PC or Paint version is not guaranteed. **ARM64 has not been tested.**
-- Paint integration has had limited testing on one Windows 11 installation. v0.2 adds a focused scheduler/editor smoke check, not a broad live Paint compatibility test. Paint updates can change its accessibility controls.
+- Paint integration has had limited testing on one Windows 11 installation. Scheduler/editor smoke checks cover per-track timing and setup compatibility; a broad live Paint compatibility test has not been performed. Paint updates can change its accessibility controls.
 - The executable is unsigned. A PC's application-control policy may restrict unsigned applications.
 - Playback speed depends on how quickly Paint updates its layers. Switching to another app pauses playback.
 - This is a live preview helper. It does **not export GIFs or videos**.
@@ -75,11 +78,11 @@ The helper changes layer visibility and selection; it does not save, merge, dele
 
 `PaintFrames.cs` contains the Paint integration, `AnimationTimeline.cs` handles scheduling, and `TrackEditor.cs` contains the track editor. `Build.cmd` uses the .NET Framework compiler included with Windows and writes `PaintFrames.exe` in the repository root. A small focused check lives in `checks/TimelineChecks.cs`.
 
-The release workflow packages the reviewed executable in `prebuilt/PaintFrames.exe` and never runs the compiler. v0.2 includes a newly built executable for the new animation features.
+The release workflow packages the reviewed executable in `prebuilt/PaintFrames.exe` and never runs the compiler. v0.3 includes a newly built executable for per-track FPS.
 
 ## Releases through GitHub Actions
 
-Pushing a version tag such as `v0.2.0` runs the Windows-only release workflow. It:
+Pushing a version tag such as `v0.3.0` runs the Windows-only release workflow. It:
 
 1. Verifies `prebuilt/PaintFrames.exe` against `prebuilt/SHA256SUMS.txt`.
 2. Packages that same executable with the usage instructions.
