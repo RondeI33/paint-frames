@@ -1,12 +1,20 @@
-Use Microsoft Paint layers as animation frames on Windows 11.
+## Layered animation
 
-- Step forwards with **F7** and backwards with **F6**.
-- Toggle playback with **F8** and restore original visibility with **F9**.
-- Exclude any layers using the checklist; excluded layers keep their original visibility.
-- Adjust playback speed and loop from the last frame back to the first.
+Animate several Paint layer tracks together, or switch between them after a chosen number of complete loops.
 
-Download **PaintFrames.exe** to run the helper directly, or download the Windows ZIP for the executable and instructions. Open Paint's **Layers** panel before starting.
+- New **Layered animation** tab with named tracks, layer/frame ranges, cycle counts, and **Start after** links.
+- **Your example** preset: layers **1-6 three times**, then **1-3 once**, then **4-8 forever**. Requires eight Paint layers.
+- Tracks can run together. Their visible layers are combined, including shared layers.
+- **Hide** a completed track or **Hold last** to keep its last frame on screen.
+- Compose a frame from several layers with `1+7,2+8,3+9`.
+- Repeat the whole finite sequence, or stop when it ends. **0 cycles** loops a track forever.
+- Save/load animation setups and playback speed as XML.
+- Existing single-loop mode and exclusions remain available.
 
-This release packages the existing executable without recompilation. SHA-256 checksums are included.
+**Use it:** keep Paint's Layers panel open, open **Layered animation**, click **Your example**, adjust the layer numbers, then press **F8**. Layer numbers follow the top-to-bottom Paint list. **F6/F7** step backward/forward; **F9** restores original visibility.
 
-Requires Windows 11 and a Paint version with Layers. Initial testing is limited to one Windows installation; ARM64 is untested. The executable is unsigned. This is a preview helper, with no GIF or video export.
+Download **PaintFrames.exe** directly, or the Windows ZIP with instructions. Close the previous helper before starting the new version.
+
+Validation: application compilation plus a focused scheduler/editor check covering exact repeat counts and handoffs, concurrent/composite frames, hold/hide behavior, backgrounds, wrapping/stopping, circular dependency rejection, and setup round-trip. A broad live Paint test was not performed.
+
+Windows 11 with Paint Layers is required. ARM64 remains untested. The executable is unsigned. GitHub Actions packages the locally built v0.2 executable and verifies its checksum; it does not rebuild it. This is a preview helper, with no GIF/video export.

@@ -1,5 +1,33 @@
 PAINT FRAMES - Microsoft Paint on Windows 11
 
+NEW IN v0.2: LAYERED ANIMATION
+Open the Layered animation tab to animate several tracks together or
+chain one loop after another. Click "Your example" for this setup:
+
+  Track     Layers   Cycles   Start after   When done
+  Loop 1    1-6      3        (blank)       Hide
+  Loop 2    1-3      1        Loop 1        Hide
+  Loop 3    4-8      0        Loop 2        Hide
+
+This needs at least eight Paint layers. Numbers are positions in Paint's
+top-to-bottom layer list: 1 is the top layer, regardless of its name.
+Loop 1 plays three complete times, then Loop 2 once, then Loop 3 forever.
+Cycles=0 means forever. An outgoing track set to Hide disappears.
+
+Leave Start after blank on multiple tracks to animate them together.
+Use Hold last to keep a finished track's last frame visible.
+Use 1+7,2+8,3+9 to make frames containing several layers at once.
+Layers not used by enabled tracks keep their original visibility.
+All tracks share the playback speed. Paint's layer order controls stacking.
+
+Repeat whole sequence restarts all finite tracks; uncheck it to stop at
+the end. Save setup / Load setup stores tracks and playback speed in an
+XML file, not the artwork. Keep the same Paint layer order when loading.
+Editing a track pauses playback; the next step restarts the preview.
+The Single loop checklist only controls the Single loop tab.
+
+SINGLE LOOP (ORIGINAL MODE)
+
 1. Open your drawing in Paint and open the Layers panel.
 2. Double-click PaintFrames.exe. No installation or AutoHotkey required.
 3. In the helper, UNCHECK any layers you do not want to animate.
@@ -45,6 +73,6 @@ drawing you do while using it stays in the selected frame. This is a live
 preview helper; it does not export GIFs or videos.
 
 SOURCE
-PaintFrames.cs is the complete editable source. Build.cmd rebuilds the
-executable using the .NET Framework compiler included with Windows.
+PaintFrames.cs, AnimationTimeline.cs and TrackEditor.cs contain the source.
+Build.cmd rebuilds it with the .NET Framework compiler included with Windows.
 No administrator privileges, downloads, or security-setting changes needed.

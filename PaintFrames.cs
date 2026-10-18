@@ -11,6 +11,9 @@ using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Forms;
 
+[assembly: System.Reflection.AssemblyVersion("0.2.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.2.0.0")]
+
 static class Native
 {
     public delegate IntPtr HookProc(int code, IntPtr message, IntPtr data);
@@ -57,7 +60,11 @@ sealed class FrameEngine
     bool[] original;
     int originalSelected = -1;
     int current = -1;
+    CompiledTimeline timeline;
+    long timelineTick = -1;
     public bool HasSession { get { return original != null; } }
+    public bool HasFrame { get { return current >= 0 || timelineTick >= 0; } }
+    public bool Completed { get { return timeline != null && timeline.Finished(timelineTick); } }
     public string[] FrameIds { get; private set; }
     public string[] FrameNames { get; private set; }
 
@@ -99,6 +106,7 @@ sealed class FrameEngine
         window = hwnd; signature = Signature(layers);
         original = layers.Select(x => x.Visible).ToArray();
         originalSelected = layers.FindIndex(Selected); current = -1;
+        timeline = null; timelineTick = -1;
         LoadOptions(layers);
     }
 
@@ -108,7 +116,7 @@ sealed class FrameEngine
         FrameNames = layers.Select((x, i) => (i + 1) + ". " + x.Element.Current.Name + (i == 0 ? "  (top)" : i == layers.Count - 1 ? "  (bottom)" : "")).ToArray();
     }
 
-    public string Execute(IntPtr hwnd, string action, HashSet<string> excluded)
+    public string Execute(IntPtr hwnd, string action, HashSet<string> excluded, AnimationDefinition definition)
     {
         if (action == "restore") return Restore();
         var layers = Read(hwnd);
@@ -116,13 +124,28 @@ sealed class FrameEngine
         {
             if (HasSession && window == hwnd && signature == Signature(layers)) Restore();
             else if (HasSession && window != hwnd) Restore();
-            original = null; current = -1;
+            original = null; current = -1; timeline = null; timelineTick = -1;
             LoadOptions(Read(hwnd));
             return "Found " + layers.Count + " layers. Uncheck any you want to exclude.";
         }
         if (!HasSession) Start(hwnd, layers);
         if (window != hwnd) throw new InvalidOperationException("Preview belongs to another Paint window. Restore it before switching documents.");
         if (signature != Signature(layers)) throw new InvalidOperationException("Layers changed. Click Re-scan to use their new order.");
+        if (definition != null)
+        {
+            if (timeline == null) timeline = new CompiledTimeline(definition, layers.Count);
+            long nextTick = action == "first" ? 0 : timeline.Move(timelineTick, action == "previous" ? -1 : 1);
+            string description;
+            bool[] visible = timeline.Visibility(nextTick, original, out description);
+            // Visibility is a union: one track never hides another track's current frame.
+            for (int i = 0; i < layers.Count; i++) if (visible[i]) layers[i].SetVisible(true);
+            for (int i = 0; i < layers.Count; i++) if (!visible[i]) layers[i].SetVisible(false);
+            int selected = Array.FindIndex(visible, value => value);
+            for (int i = 0; i < layers.Count; i++) if (visible[i] && timeline.ControlledLayers[i]) { selected = i; break; }
+            if (selected >= 0) Select(layers[selected]);
+            timelineTick = nextTick;
+            return "Step " + (timelineTick + 1) + ": " + description;
+        }
         var frames = Enumerable.Range(0, layers.Count).Where(i => !excluded.Contains(layers[i].Id)).ToList();
         if (frames.Count == 0) throw new InvalidOperationException("Check at least one layer to use as an animation frame.");
         int position = frames.IndexOf(current);
@@ -143,7 +166,7 @@ sealed class FrameEngine
         if (Signature(layers) != signature) throw new InvalidOperationException("Layers changed, so the old visibility cannot be restored. Click Re-scan to start a new preview.");
         for (int i = 0; i < layers.Count; i++) layers[i].SetVisible(original[i]);
         if (originalSelected >= 0) Select(layers[originalSelected]);
-        original = null; current = -1;
+        original = null; current = -1; timeline = null; timelineTick = -1;
         return "Original layer visibility restored. F7 starts again.";
     }
 }
@@ -156,24 +179,29 @@ sealed class FrameWindow : Form
     readonly NumericUpDown fps = new NumericUpDown();
     readonly CheckedListBox choices = new CheckedListBox();
     readonly List<string> choiceIds = new List<string>();
+    readonly TabControl modes = new TabControl();
+    readonly TrackEditor trackEditor = new TrackEditor();
     readonly System.Windows.Forms.Timer clock = new System.Windows.Forms.Timer();
     readonly HashSet<int> held = new HashSet<int>();
     readonly Native.HookProc callback;
     IntPtr hook, paint;
-    bool busy, playing, closeAllowed, syncingChoices;
+    bool busy, playing, closeAllowed, syncingChoices, configurationDirty;
     DateTime lastFrame = DateTime.MinValue;
 
     public FrameWindow()
     {
-        Text = "Paint Frames"; ClientSize = new Size(520, 555);
+        Text = "Paint Frames 0.2 - Layered animation"; ClientSize = new Size(960, 690);
         Font = new Font("Segoe UI", 10); FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(246, 247, 250);
-        var title = new Label { Text = "Your layers, one frame at a time", Location = new Point(20, 18), Size = new Size(460, 30), Font = new Font("Segoe UI", 15, FontStyle.Bold) };
+        var title = new Label { Text = "Paint Frames - layered animation", Location = new Point(20, 18), Size = new Size(700, 30), Font = new Font("Segoe UI", 15, FontStyle.Bold) };
         Controls.Add(title);
         Controls.Add(new Label { Text = "Keep Paint's Layers panel open. Shortcuts work in Paint.", Location = new Point(20, 58), Size = new Size(465, 25) });
-        Controls.Add(new Label { Text = "Use as animation frames (top to bottom):", Location = new Point(20, 95), Size = new Size(475, 25), Font = new Font("Segoe UI", 10, FontStyle.Bold) });
-        choices.SetBounds(20, 124, 478, 162); choices.CheckOnClick = true; choices.IntegralHeight = false;
+        modes.SetBounds(20, 92, 920, 388);
+        var single = new TabPage("Single loop"); var layered = new TabPage("Layered animation");
+        modes.TabPages.Add(single); modes.TabPages.Add(layered); Controls.Add(modes);
+        single.Controls.Add(new Label { Text = "Use as animation frames (top to bottom):", Location = new Point(12, 12), Size = new Size(600, 25), Font = new Font("Segoe UI", 10, FontStyle.Bold) });
+        choices.SetBounds(12, 44, 875, 230); choices.CheckOnClick = true; choices.IntegralHeight = false;
         choices.ItemCheck += async delegate
         {
             if (syncingChoices) return;
@@ -181,19 +209,25 @@ sealed class FrameWindow : Form
             if (engine.HasSession && !await Run("restore")) return;
             status.Text = "Frame selection updated. Press F7 to start from the top.";
         };
-        Controls.Add(choices);
-        Controls.Add(new Label { Text = "Unchecked layers keep their visibility from before playback.\nLeave a background visible, then uncheck it here to keep it on.", Location = new Point(20, 296), Size = new Size(480, 45) });
-        AddButton("Previous  F6", 20, 352, 145, "previous");
-        AddButton("Next  F7", 186, 352, 145, "next");
-        play.Text = "Play  F8"; play.SetBounds(352, 352, 145, 38);
+        single.Controls.Add(choices);
+        single.Controls.Add(new Label { Text = "Unchecked layers keep their visibility from before playback.\nLeave a background visible, then uncheck it here to keep it on.", Location = new Point(12, 286), Size = new Size(850, 50) });
+        layered.Controls.Add(trackEditor);
+        trackEditor.CurrentSpeed = () => (int)fps.Value;
+        trackEditor.SpeedLoaded += value => fps.Value = value;
+        trackEditor.PauseRequested += Pause;
+        trackEditor.ConfigurationChanged += SettingsChanged;
+        modes.SelectedIndexChanged += delegate { SettingsChanged(); };
+        AddButton("Previous  F6", 20, 495, 145, "previous");
+        AddButton("Next  F7", 186, 495, 145, "next");
+        play.Text = "Play  F8"; play.SetBounds(352, 495, 145, 38);
         play.Click += async delegate { await TogglePlayback(); }; Controls.Add(play);
-        AddButton("First frame", 20, 400, 145, "first");
-        AddButton("Restore  F9", 186, 400, 145, "restore");
-        AddButton("Re-scan", 352, 400, 145, "scan");
-        Controls.Add(new Label { Text = "Playback speed", Location = new Point(20, 454), Size = new Size(120, 25) });
-        fps.SetBounds(145, 451, 55, 28); fps.Minimum = 1; fps.Maximum = 12; fps.Value = 4; Controls.Add(fps);
-        Controls.Add(new Label { Text = "frames/sec (Paint may be slower)", Location = new Point(210, 454), Size = new Size(290, 25) });
-        status.SetBounds(20, 492, 478, 60); status.Text = "Click Paint, then press F7 to begin."; Controls.Add(status);
+        AddButton("First frame", 20, 543, 145, "first");
+        AddButton("Restore  F9", 186, 543, 145, "restore");
+        AddButton("Re-scan", 352, 543, 145, "scan");
+        Controls.Add(new Label { Text = "Playback speed", Location = new Point(20, 597), Size = new Size(120, 25) });
+        fps.SetBounds(145, 594, 55, 28); fps.Minimum = 1; fps.Maximum = 12; fps.Value = 4; Controls.Add(fps);
+        Controls.Add(new Label { Text = "frames/sec (Paint may be slower)", Location = new Point(210, 597), Size = new Size(330, 25) });
+        status.SetBounds(20, 634, 920, 50); status.Text = "Click Paint, then press F7 to begin."; Controls.Add(status);
         callback = Keyboard;
         hook = Native.SetWindowsHookEx(13, callback, Native.GetModuleHandle(null), 0);
         if (hook == IntPtr.Zero) status.Text = "Keyboard shortcuts unavailable. Use the buttons instead.";
@@ -256,29 +290,42 @@ sealed class FrameWindow : Form
         return Native.CallNextHookEx(hook, code, message, data);
     }
     void Pause() { playing = false; play.Text = "Play  F8"; }
+    void SettingsChanged()
+    {
+        Pause(); configurationDirty = true;
+        status.Text = "Settings changed. The next step restarts the preview. Unlisted layers keep their original visibility.";
+    }
     async Task TogglePlayback()
     {
         if (playing) { Pause(); return; }
         if (busy) return;
-        if (!engine.HasSession && !await Run("first")) return;
+        if ((!engine.HasFrame || engine.Completed || configurationDirty) && !await Run("first")) return;
         playing = true; lastFrame = DateTime.UtcNow; play.Text = "Pause  F8";
     }
     async Task<bool> Run(string action)
     {
         if (busy) return false;
-        busy = true; choices.Enabled = false;
+        busy = true; modes.Enabled = false;
         try
         {
+            bool frameAction = action == "next" || action == "previous" || action == "first";
+            AnimationDefinition definition = frameAction && modes.SelectedIndex == 1 ? trackEditor.ReadDefinition() : null;
             IntPtr target = action == "restore" ? IntPtr.Zero : FindPaint();
             var excluded = new HashSet<string>();
             for (int i = 0; i < choiceIds.Count; i++) if (!choices.GetItemChecked(i)) excluded.Add(choiceIds[i]);
-            status.Text = await Task.Run(() => engine.Execute(target, action, excluded));
+            if (frameAction && configurationDirty)
+            {
+                if (engine.HasSession) await Task.Run(() => engine.Restore());
+                configurationDirty = false;
+            }
+            status.Text = await Task.Run(() => engine.Execute(target, action, excluded, definition));
             RefreshChoices();
             lastFrame = DateTime.UtcNow;
+            if (engine.Completed) Pause();
             return true;
         }
         catch (Exception error) { Pause(); status.Text = error.Message; return false; }
-        finally { busy = false; choices.Enabled = true; }
+        finally { busy = false; modes.Enabled = true; }
     }
     void RefreshChoices()
     {
@@ -296,6 +343,7 @@ sealed class FrameWindow : Form
             }
         }
         finally { syncingChoices = false; }
+        trackEditor.UpdateLayers(engine.FrameNames);
     }
     async void OnClosing(object sender, FormClosingEventArgs e)
     {
